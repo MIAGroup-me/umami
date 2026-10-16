@@ -35,12 +35,16 @@ jobs:
         run: npm install --global vercel@64
 
       # With the repository in the upload, Vercel reads the commit author and on Hobby refuses anyone
-      # but the account's owner; without it, the deployment belongs to the token's owner
-      - name: Remove the Git metadata
+      # but the account's owner; without it, the deployment belongs to the token's owner.
+      # The CLI also leaves .gitignore out of every upload, and Umami's build runs Biome, which stops
+      # without it: .vercelignore rules come after the CLI's own, so a negation brings it back. It is
+      # written here rather than committed, to keep the fork free of changes to Umami's files.
+      - name: Prepare the upload
         id: commit
         run: |
           echo "subject=$(git log -1 --format=%s)" >> "$GITHUB_OUTPUT"
           rm -rf .git
+          echo '!.gitignore' >> .vercelignore
 
       # Builds on Vercel with the project's Production variables (DATABASE_URL among them)
       - name: Deploy
