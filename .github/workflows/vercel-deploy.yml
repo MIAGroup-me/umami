@@ -1,0 +1,56 @@
+name: Vercel deploy
+
+# MIA Group's Umami (miamami.vercel.app, used by Archetipi and the Mia site) deploys from this fork.
+# Vercel's Git integration is off: on Hobby it cannot deploy from an organization's repository, nor
+# commits by Umami's own authors. "Sync fork" brings a new release to master, and this deploys it.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A deploy may apply Umami's database migrations: never two at once
+concurrency:
+  group: vercel-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install the Vercel CLI
+        run: npm install --global vercel@64
+
+      # With the repository in the upload, Vercel reads the commit author and on Hobby refuses anyone
+      # but the account's owner; without it, the deployment belongs to the token's owner
+      - name: Remove the Git metadata
+        id: commit
+        run: |
+          echo "subject=$(git log -1 --format=%s)" >> "$GITHUB_OUTPUT"
+          rm -rf .git
+
+      # Builds on Vercel with the project's Production variables (DATABASE_URL among them)
+      - name: Deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          SUBJECT: ${{ steps.commit.outputs.subject }}
+        run: |
+          : "${VERCEL_TOKEN:?Set the VERCEL_TOKEN secret}"
+          url="$(vercel deploy --prod --token "$VERCEL_TOKEN" \
+            -m githubCommitRef="$GITHUB_REF_NAME" \
+            -m githubCommitSha="$GITHUB_SHA" \
+            -m githubCommitMessage="$SUBJECT")"
+          echo "Deployment: $url" >> "$GITHUB_STEP_SUMMARY"
